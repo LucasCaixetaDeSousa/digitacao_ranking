@@ -5,7 +5,7 @@ from typing import Any
 import psycopg2
 from psycopg2.pool import SimpleConnectionPool
 
-from backend.config_server import (
+from config_server import (
     DATABASE_URL,
     DB_HOST,
     DB_NAME,
