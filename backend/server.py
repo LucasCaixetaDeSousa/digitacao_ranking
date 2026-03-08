@@ -4,8 +4,8 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from backend.config_server import SERVER_HOST, SERVER_PORT, DEBUG
-from backend.database import (
+from config_server import SERVER_HOST, SERVER_PORT, DEBUG
+from database import (
     close_pool,
     get_connection,
     init_database,
