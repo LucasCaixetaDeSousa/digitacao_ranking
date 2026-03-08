@@ -16,6 +16,8 @@ DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_MINCONN = int(os.getenv("DB_MINCONN", "1"))
 DB_MAXCONN = int(os.getenv("DB_MAXCONN", "10"))
 
+DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
+
 # ===============================
 # SERVER
 # ===============================
