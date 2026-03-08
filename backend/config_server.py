@@ -1,36 +1,30 @@
 from __future__ import annotations
+import os
 
-import sys
-import pygame
+# ===============================
+# DATABASE
+# ===============================
 
-from core.game import Game
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+DB_HOST = os.getenv("DB_HOST", "")
+DB_NAME = os.getenv("DB_NAME", "")
+DB_USER = os.getenv("DB_USER", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
 
-def encerrar_tudo() -> None:
-    try:
-        pygame.mixer.quit()
-    except Exception:
-        pass
+DB_MINCONN = int(os.getenv("DB_MINCONN", "1"))
+DB_MAXCONN = int(os.getenv("DB_MAXCONN", "10"))
 
-    try:
-        pygame.quit()
-    except Exception:
-        pass
+# ===============================
+# SERVER
+# ===============================
 
+SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVER_PORT = int(os.getenv("SERVER_PORT", "10000"))
 
-def main() -> None:
-    # Modo servidor local, usado apenas se você quiser rodar o backend separadamente.
-    if "--backend" in sys.argv:
-        from backend.server import run
-        run()
-        return
+# ===============================
+# DEBUG
+# ===============================
 
-    try:
-        jogo = Game()
-        jogo.executar()
-    finally:
-        encerrar_tudo()
-
-
-if __name__ == "__main__":
-    main()
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
