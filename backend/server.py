@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -51,14 +52,38 @@ def _safe_int(valor, padrao=0) -> int:
 
 
 # ==================================================
-# MEMÓRIA ADMIN (sincronização simples)
+# ADMIN DATA (persistente)
 # ==================================================
 
-ADMIN_DATA = {
-    "niveis": {},
-    "turmas": {},
-    "alunos": {}
-}
+ADMIN_FILE = "admin_data.json"
+
+
+def carregar_admin():
+
+    if os.path.exists(ADMIN_FILE):
+        try:
+            with open(ADMIN_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    return {
+        "niveis": {},
+        "turmas": {},
+        "alunos": {}
+    }
+
+
+def salvar_admin(data):
+
+    try:
+        with open(ADMIN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+ADMIN_DATA = carregar_admin()
 
 
 # ==================================================
@@ -141,6 +166,7 @@ class RankingHandler(BaseHTTPRequestHandler):
                 return
 
             ADMIN_DATA[chave] = conteudo
+            salvar_admin(ADMIN_DATA)
 
             json_response(self, 200, {"ok": True})
             return
