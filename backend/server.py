@@ -4,15 +4,14 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from config_server import SERVER_HOST, SERVER_PORT, DEBUG
-from database import (
+from backend.config_server import SERVER_HOST, SERVER_PORT, DEBUG
+from backend.database import (
     close_pool,
     get_connection,
     init_database,
     init_pool,
     put_connection,
 )
-
 
 # ==================================================
 # UTIL
@@ -52,6 +51,17 @@ def _safe_int(valor, padrao=0) -> int:
 
 
 # ==================================================
+# MEMÓRIA ADMIN (sincronização simples)
+# ==================================================
+
+ADMIN_DATA = {
+    "niveis": {},
+    "turmas": {},
+    "alunos": {}
+}
+
+
+# ==================================================
 # HANDLER
 # ==================================================
 
@@ -61,69 +71,88 @@ class RankingHandler(BaseHTTPRequestHandler):
         if DEBUG:
             super().log_message(format, *args)
 
-    # --------------------------------------------------
-
     def do_OPTIONS(self):
         json_response(self, 200, {"ok": True})
 
     # --------------------------------------------------
-    # POST /score
+    # POST
     # --------------------------------------------------
 
     def do_POST(self):
-        if self.path != "/score":
-            json_response(self, 404, {"error": "not_found"})
+
+        # SCORE
+        if self.path == "/score":
+
+            data = json_body(self)
+
+            nome = str(data.get("nome", "")).strip()
+            turma = str(data.get("turma", "")).strip()
+            nivel = str(data.get("nivel", "")).strip()
+            pontos = _safe_int(data.get("pontos", 0), 0)
+            tempo = _safe_int(data.get("tempo", 9999), 9999)
+
+            if not nome or not turma or not nivel:
+                json_response(self, 400, {"error": "missing_fields"})
+                return
+
+            conn = get_connection()
+
+            try:
+                cur = conn.cursor()
+
+                cur.execute(
+                    """
+                    INSERT INTO scores (nome, turma, nivel_id, pontos, tempo)
+                    VALUES (%s, %s, %s, %s, %s)
+
+                    ON CONFLICT (nome, turma, nivel_id)
+                    DO UPDATE SET
+                        pontos = GREATEST(scores.pontos, EXCLUDED.pontos),
+                        tempo = CASE
+                            WHEN EXCLUDED.pontos > scores.pontos THEN EXCLUDED.tempo
+                            WHEN EXCLUDED.pontos = scores.pontos THEN LEAST(scores.tempo, EXCLUDED.tempo)
+                            ELSE scores.tempo
+                        END,
+                        updated_at = now();
+                    """,
+                    (nome, turma, nivel, pontos, tempo)
+                )
+
+                conn.commit()
+                cur.close()
+
+            finally:
+                put_connection(conn)
+
+            ranking = self._buscar_ranking_global(top=30)
+            json_response(self, 201, ranking)
             return
 
-        data = json_body(self)
+        # ADMIN SAVE
+        if self.path == "/admin/salvar":
 
-        nome = str(data.get("nome", "")).strip()
-        turma = str(data.get("turma", "")).strip()
-        nivel = str(data.get("nivel", "")).strip()
-        pontos = _safe_int(data.get("pontos", 0), 0)
-        tempo = _safe_int(data.get("tempo", 9999), 9999)
+            data = json_body(self)
 
-        if not nome or not turma or not nivel:
-            json_response(self, 400, {"error": "missing_fields"})
+            chave = str(data.get("chave", "")).strip()
+            conteudo = data.get("dados", {})
+
+            if chave not in ADMIN_DATA:
+                json_response(self, 400, {"error": "chave_invalida"})
+                return
+
+            ADMIN_DATA[chave] = conteudo
+
+            json_response(self, 200, {"ok": True})
             return
 
-        conn = get_connection()
-
-        try:
-            cur = conn.cursor()
-
-            cur.execute(
-                """
-                INSERT INTO scores (nome, turma, nivel_id, pontos, tempo)
-                VALUES (%s, %s, %s, %s, %s)
-
-                ON CONFLICT (nome, turma, nivel_id)
-                DO UPDATE SET
-                    pontos = GREATEST(scores.pontos, EXCLUDED.pontos),
-                    tempo = CASE
-                        WHEN EXCLUDED.pontos > scores.pontos THEN EXCLUDED.tempo
-                        WHEN EXCLUDED.pontos = scores.pontos THEN LEAST(scores.tempo, EXCLUDED.tempo)
-                        ELSE scores.tempo
-                    END,
-                    updated_at = now();
-                """,
-                (nome, turma, nivel, pontos, tempo)
-            )
-
-            conn.commit()
-            cur.close()
-
-        finally:
-            put_connection(conn)
-
-        ranking = self._buscar_ranking_global(top=30)
-        json_response(self, 201, ranking)
+        json_response(self, 404, {"error": "not_found"})
 
     # --------------------------------------------------
     # GET
     # --------------------------------------------------
 
     def do_GET(self):
+
         parsed = urlparse(self.path)
         path = parsed.path
         q = parse_qs(parsed.query)
@@ -132,41 +161,47 @@ class RankingHandler(BaseHTTPRequestHandler):
             json_response(self, 200, {"status": "ok"})
             return
 
-        top = _safe_int(q.get("top", ["20"])[0], 20)
-        if top <= 0:
-            top = 20
+        if path == "/admin/dados":
 
-        try:
-            if path == "/ranking/global/geral":
-                resp = self._buscar_ranking_global(top=top)
+            chave = str(q.get("chave", [""])[0]).strip()
 
-            elif path == "/ranking/global/nivel":
-                nivel = str(q.get("nivel", [""])[0]).strip()
-                resp = self._buscar_ranking_global_nivel(nivel=nivel, top=top)
-
-            elif path == "/ranking/turma/geral":
-                turma = str(q.get("turma", [""])[0]).strip()
-                resp = self._buscar_ranking_turma(turma=turma, top=top)
-
-            elif path == "/ranking/turma/nivel":
-                turma = str(q.get("turma", [""])[0]).strip()
-                nivel = str(q.get("nivel", [""])[0]).strip()
-                resp = self._buscar_ranking_turma_nivel(turma=turma, nivel=nivel, top=top)
-
-            else:
-                json_response(self, 404, {"error": "not_found"})
+            if chave not in ADMIN_DATA:
+                json_response(self, 400, {"error": "chave_invalida"})
                 return
 
-            json_response(self, 200, resp)
+            json_response(self, 200, ADMIN_DATA[chave])
+            return
 
-        except Exception as e:
-            json_response(self, 500, {"error": "server_error", "detail": str(e)})
+        top = _safe_int(q.get("top", ["20"])[0], 20)
+
+        if path == "/ranking/global/geral":
+            resp = self._buscar_ranking_global(top=top)
+
+        elif path == "/ranking/global/nivel":
+            nivel = str(q.get("nivel", [""])[0]).strip()
+            resp = self._buscar_ranking_global_nivel(nivel, top)
+
+        elif path == "/ranking/turma/geral":
+            turma = str(q.get("turma", [""])[0]).strip()
+            resp = self._buscar_ranking_turma(turma, top)
+
+        elif path == "/ranking/turma/nivel":
+            turma = str(q.get("turma", [""])[0]).strip()
+            nivel = str(q.get("nivel", [""])[0]).strip()
+            resp = self._buscar_ranking_turma_nivel(turma, nivel, top)
+
+        else:
+            json_response(self, 404, {"error": "not_found"})
+            return
+
+        json_response(self, 200, resp)
 
     # ==================================================
     # CONSULTAS
     # ==================================================
 
     def _buscar_ranking_global(self, top=20):
+
         conn = get_connection()
 
         try:
@@ -200,9 +235,8 @@ class RankingHandler(BaseHTTPRequestHandler):
         finally:
             put_connection(conn)
 
-    # --------------------------------------------------
-
     def _buscar_ranking_global_nivel(self, nivel, top=20):
+
         if not nivel:
             return []
 
@@ -238,9 +272,8 @@ class RankingHandler(BaseHTTPRequestHandler):
         finally:
             put_connection(conn)
 
-    # --------------------------------------------------
-
     def _buscar_ranking_turma(self, turma, top=20):
+
         if not turma:
             return []
 
@@ -278,9 +311,8 @@ class RankingHandler(BaseHTTPRequestHandler):
         finally:
             put_connection(conn)
 
-    # --------------------------------------------------
-
     def _buscar_ranking_turma_nivel(self, turma, nivel, top=20):
+
         if not turma or not nivel:
             return []
 
@@ -322,22 +354,21 @@ class RankingHandler(BaseHTTPRequestHandler):
 # ==================================================
 
 def run() -> None:
+
     init_pool()
     init_database()
 
     server = ThreadingHTTPServer((SERVER_HOST, SERVER_PORT), RankingHandler)
 
-    print(f"Servidor de ranking rodando em http://{SERVER_HOST}:{SERVER_PORT}")
+    print(f"Servidor rodando em http://{SERVER_HOST}:{SERVER_PORT}")
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        try:
-            server.server_close()
-        finally:
-            close_pool()
+        server.server_close()
+        close_pool()
 
 
 if __name__ == "__main__":
