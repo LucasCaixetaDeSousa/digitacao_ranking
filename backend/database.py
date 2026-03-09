@@ -173,8 +173,3 @@ def init_database() -> None:
 
     finally:
         put_connection(conn)
-        conn.commit()
-        cur.close()
-
-    finally:
-        put_connection(conn)
