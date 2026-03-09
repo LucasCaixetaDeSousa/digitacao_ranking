@@ -137,6 +137,9 @@ def init_database() -> None:
     try:
         cur = conn.cursor()
 
+        # ======================================
+        # TABELA DE SCORES (ranking)
+        # ======================================
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS scores (
@@ -152,6 +155,24 @@ def init_database() -> None:
             """
         )
 
+        # ======================================
+        # TABELA DE DADOS ADMIN
+        # ======================================
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS admin_data (
+                chave TEXT PRIMARY KEY,
+                dados JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT now()
+            );
+            """
+        )
+
+        conn.commit()
+        cur.close()
+
+    finally:
+        put_connection(conn)
         conn.commit()
         cur.close()
 
