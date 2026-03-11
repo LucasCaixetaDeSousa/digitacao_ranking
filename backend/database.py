@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-
 import psycopg2
 from psycopg2.pool import SimpleConnectionPool
 
@@ -25,6 +24,7 @@ _pool: SimpleConnectionPool | None = None
 # ==================================================
 
 def _build_conn_kwargs() -> dict[str, Any]:
+
     if DATABASE_URL:
         return {
             "dsn": DATABASE_URL,
@@ -42,6 +42,7 @@ def _build_conn_kwargs() -> dict[str, Any]:
 
 
 def db_configurada() -> bool:
+
     if DATABASE_URL:
         return True
 
@@ -53,6 +54,7 @@ def db_configurada() -> bool:
 # ==================================================
 
 def init_pool(minconn: int | None = None, maxconn: int | None = None) -> SimpleConnectionPool:
+
     global _pool
 
     if _pool is not None:
@@ -72,11 +74,9 @@ def init_pool(minconn: int | None = None, maxconn: int | None = None) -> SimpleC
 
     kwargs = _build_conn_kwargs()
 
-    try:
-        _pool = SimpleConnectionPool(minconn, maxconn, **kwargs)
-        return _pool
-    except Exception as e:
-        raise RuntimeError(f"Erro ao criar pool de conexões: {e}") from e
+    _pool = SimpleConnectionPool(minconn, maxconn, **kwargs)
+
+    return _pool
 
 
 # ==================================================
@@ -84,46 +84,37 @@ def init_pool(minconn: int | None = None, maxconn: int | None = None) -> SimpleC
 # ==================================================
 
 def get_connection():
+
     global _pool
 
     if _pool is None:
         init_pool()
 
-    try:
-        return _pool.getconn()
-    except Exception as e:
-        raise RuntimeError(f"Erro ao obter conexão: {e}") from e
+    return _pool.getconn()
 
 
 # ==================================================
 # RETURN CONNECTION
 # ==================================================
 
-def put_connection(conn) -> None:
+def put_connection(conn):
+
     global _pool
 
-    if _pool is None or conn is None:
-        return
-
-    try:
+    if _pool and conn:
         _pool.putconn(conn)
-    except Exception:
-        pass
 
 
 # ==================================================
 # CLOSE POOL
 # ==================================================
 
-def close_pool() -> None:
+def close_pool():
+
     global _pool
 
-    if _pool is None:
-        return
-
-    try:
+    if _pool:
         _pool.closeall()
-    finally:
         _pool = None
 
 
@@ -131,15 +122,78 @@ def close_pool() -> None:
 # INIT DATABASE
 # ==================================================
 
-def init_database() -> None:
+def init_database():
+
     conn = get_connection()
 
     try:
+
         cur = conn.cursor()
 
         # ======================================
-        # TABELA DE SCORES (ranking)
+        # TURMAS
         # ======================================
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS turmas (
+                nome TEXT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT now()
+            );
+            """
+        )
+
+        # ======================================
+        # ALUNOS
+        # ======================================
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alunos (
+                nome TEXT NOT NULL,
+                turma TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT now(),
+                PRIMARY KEY (nome, turma)
+            );
+            """
+        )
+
+        # ======================================
+        # NIVEIS
+        # ======================================
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS niveis (
+                id TEXT PRIMARY KEY,
+                categoria TEXT NOT NULL,
+                frase TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT now()
+            );
+            """
+        )
+
+        # ======================================
+        # PROGRESSO
+        # ======================================
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS progresso (
+                nome TEXT NOT NULL,
+                turma TEXT NOT NULL,
+                nivel_id TEXT NOT NULL,
+                concluido BOOLEAN DEFAULT TRUE,
+                updated_at TIMESTAMP DEFAULT now(),
+                PRIMARY KEY (nome, turma, nivel_id)
+            );
+            """
+        )
+
+        # ======================================
+        # RANKING (scores)
+        # ======================================
+
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS scores (
@@ -156,8 +210,9 @@ def init_database() -> None:
         )
 
         # ======================================
-        # TABELA DE DADOS ADMIN
+        # ADMIN DATA
         # ======================================
+
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS admin_data (
@@ -169,7 +224,9 @@ def init_database() -> None:
         )
 
         conn.commit()
+
         cur.close()
 
     finally:
+
         put_connection(conn)
