@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from config_server import SERVER_HOST, SERVER_PORT, DEBUG
 from database import (
@@ -253,19 +253,14 @@ class RankingHandler(BaseHTTPRequestHandler):
         try:
             cur = conn.cursor()
 
-            # Mantém um único progresso atual por aluno/turma
-            cur.execute(
-                """
-                DELETE FROM progresso
-                WHERE nome = %s AND turma = %s
-                """,
-                (nome, turma),
-            )
-
             cur.execute(
                 """
                 INSERT INTO progresso (nome, turma, nivel_id, concluido, updated_at)
                 VALUES (%s, %s, %s, TRUE, now())
+                ON CONFLICT (nome, turma)
+                DO UPDATE SET
+                    nivel_id = EXCLUDED.nivel_id,
+                    updated_at = now()
                 """,
                 (nome, turma, str(nivel)),
             )
