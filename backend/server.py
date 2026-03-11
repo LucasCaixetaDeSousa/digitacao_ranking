@@ -172,6 +172,8 @@ class RankingHandler(BaseHTTPRequestHandler):
             json_response(self, 400, {"error": "missing_fields"})
             return
 
+        self._registrar_aluno_admin(nome, turma)
+
         conn = get_connection()
 
         try:
@@ -247,6 +249,8 @@ class RankingHandler(BaseHTTPRequestHandler):
         if not nome or not turma:
             json_response(self, 400, {"error": "missing_fields"})
             return
+
+        self._registrar_aluno_admin(nome, turma, nivel)
 
         conn = get_connection()
 
@@ -378,6 +382,107 @@ class RankingHandler(BaseHTTPRequestHandler):
                     updated_at = now()
                 """,
                 (chave, payload),
+            )
+
+            conn.commit()
+            cur.close()
+
+            return True
+
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
+
+        finally:
+            put_connection(conn)
+
+    def _registrar_aluno_admin(self, nome: str, turma: str, nivel: int | None = None) -> bool:
+        conn = get_connection()
+
+        try:
+            cur = conn.cursor()
+
+            cur.execute(
+                """
+                SELECT dados
+                FROM admin_data
+                WHERE chave = %s
+                """,
+                ("alunos",),
+            )
+
+            row = cur.fetchone()
+
+            alunos = row[0] if row and row[0] is not None else []
+
+            if not isinstance(alunos, list):
+                alunos = []
+
+            nivel_int = _safe_int(nivel, 0) if nivel is not None else 0
+
+            indice_existente = -1
+
+            for i, aluno in enumerate(alunos):
+                if not isinstance(aluno, dict):
+                    continue
+
+                nome_existente = str(aluno.get("nome", "")).strip()
+                turma_existente = str(aluno.get("turma", "")).strip()
+
+                if nome_existente == nome and turma_existente == turma:
+                    indice_existente = i
+                    break
+
+            if indice_existente >= 0:
+                aluno_existente = alunos[indice_existente]
+
+                nivel_atual = _safe_int(aluno_existente.get("nivel", 0), 0)
+
+                if nivel is not None and nivel_int > nivel_atual:
+                    aluno_existente["nivel"] = nivel_int
+
+                    payload = json.dumps(alunos, ensure_ascii=False)
+
+                    cur.execute(
+                        """
+                        INSERT INTO admin_data (chave, dados, updated_at)
+                        VALUES (%s, %s::jsonb, now())
+                        ON CONFLICT (chave)
+                        DO UPDATE SET
+                            dados = EXCLUDED.dados,
+                            updated_at = now()
+                        """,
+                        ("alunos", payload),
+                    )
+
+                    conn.commit()
+
+                cur.close()
+                return True
+
+            alunos.append(
+                {
+                    "nome": nome,
+                    "turma": turma,
+                    "nivel": nivel_int,
+                }
+            )
+
+            payload = json.dumps(alunos, ensure_ascii=False)
+
+            cur.execute(
+                """
+                INSERT INTO admin_data (chave, dados, updated_at)
+                VALUES (%s, %s::jsonb, now())
+                ON CONFLICT (chave)
+                DO UPDATE SET
+                    dados = EXCLUDED.dados,
+                    updated_at = now()
+                """,
+                ("alunos", payload),
             )
 
             conn.commit()
