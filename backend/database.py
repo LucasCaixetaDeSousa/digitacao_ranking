@@ -175,6 +175,7 @@ def init_database():
 
         # ======================================
         # PROGRESSO
+        # (1 progresso atual por aluno)
         # ======================================
 
         cur.execute(
@@ -185,7 +186,7 @@ def init_database():
                 nivel_id TEXT NOT NULL,
                 concluido BOOLEAN DEFAULT TRUE,
                 updated_at TIMESTAMP DEFAULT now(),
-                PRIMARY KEY (nome, turma, nivel_id)
+                PRIMARY KEY (nome, turma)
             );
             """
         )
